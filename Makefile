@@ -73,25 +73,66 @@ LIBS= \
 
 
 
-all: dist/pyodide.asm.js
+LIB_URL=https://github.com/pyodide/pyodide/releases/download/0.26.0a2/static-libraries-0.26.0a2.tar.bz2
+LIB_SHA256=a92da527f6d4bc4510ff51d4288c615740ab9b0cabca8f3536b15bbfdac1cfd2
+LIB_TARBALL=download/static-libraries-0.26.0a2.tar.bz2
+LIB_INSTALL_MARK=$(PYTHON_INSTALL)/.installed-pyodide
+
+PYODIDE_CORE_URL=https://github.com/pyodide/pyodide/releases/download/0.26.0a2/pyodide-core-0.26.0a2.tar.bz2
+PYODIDE_CORE_SHA256=fbda450a64093a8d246c872bb901ee172a57fe594c9f35bba61f36807c73300d
+PYODIDE_TARBALL=download/pyodide-core-0.26.0a2.tar.bz2
+PYODIDE_INSTALL=download/pyodide
+PYODIDE_INSTALL_MARK=$(PYODIDE_INSTALL)/.installed-pyodide
+
+
+all: dist/pyodide.asm.js dist/python_stdlib.zip
 
 emsdk/emsdk/.complete:
 	@date +"[%F %T] Building emsdk..."
 	make -C emsdk
 	@date +"[%F %T] done building emsdk."
 
-LIB_DOWNLOAD=$(PYTHON_INSTALL)/.installed-pyodide
-
-$(LIB_DOWNLOAD):
+$(LIB_TARBALL):
 	mkdir -p download
-	cd download && wget https://github.com/pyodide/pyodide/releases/download/0.26.0a2/static-libraries-0.26.0a2.tar.bz2
-	cd download && tar -xf static-libraries-0.26.0a2.tar.bz2
+	wget -O $@ $(LIB_URL)
+	@GOT_SHASUM=`shasum --algorithm 256 $@ | cut -f1 -d' '` \
+		&& (echo $$GOT_SHASUM | grep -q $(LIB_SHA256)) \
+		|| (\
+			   rm $@ \
+			&& echo "Got unexpected shasum $$GOT_SHASUM" \
+			&& echo "If you are updating, set LIB_TARBALL_SHA256 to this." \
+			&& exit 1 \
+		)
 
+$(LIB_INSTALL_MARK): $(LIB_TARBALL)
+	tar -xf $(LIB_TARBALL) -C download
+	touch $@
 
-src/main.o : src/main.c emsdk/emsdk/.complete
+$(PYODIDE_TARBALL):
+	mkdir -p download
+	wget -O $@ $(PYODIDE_CORE_URL)
+	@GOT_SHASUM=`shasum --algorithm 256 $@ | cut -f1 -d' '` \
+		&& (echo $$GOT_SHASUM | grep -q $(PYODIDE_CORE_SHA256)) \
+		|| (\
+			   rm $@ \
+			&& echo "Got unexpected shasum $$GOT_SHASUM" \
+			&& echo "If you are updating, set PYODIDE_CORE_SHA256 to this." \
+			&& exit 1 \
+		)
+
+$(PYODIDE_INSTALL_MARK): $(PYODIDE_TARBALL)
+	tar -xf $(PYODIDE_TARBALL) -C download
+	touch $@
+
+$(PYODIDE_INSTALL)/python_stdlib.zip: $(PYODIDE_INSTALL_MARK)
+
+dist/python_stdlib.zip: $(PYODIDE_INSTALL)/python_stdlib.zip
+	cp $< $@
+
+src/main.o : src/main.c emsdk/emsdk/.complete $(LIB_INSTALL_MARK)
 	emcc -c src/main.c -o src/main.o $(CFLAGS)
 
-dist/pyodide.asm.js : src/main.o $(LIB_DOWNLOAD)
+dist/pyodide.asm.js : src/main.o $(LIB_INSTALL_MARK)
 	mkdir -p dist
 	emcc src/main.o -o dist/pyodide.asm.js $(LDFLAGS) $(LIBS)
 	sed -f sed.txt -i dist/pyodide.asm.js

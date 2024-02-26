@@ -1,0 +1,86 @@
+version: 2.1
+
+defaults: &defaults
+  working_directory: ~/repo
+  docker:
+    # It has both Python and make!
+    - image: cimg/python:3.12.1 
+  environment:
+    - EMSDK_NUM_CORES: 3
+      EMCC_CORES: 3
+
+jobs:
+  build:
+    <<: *defaults
+    resource_class: large
+    steps:
+      - checkout
+
+      - run:
+          name: install emscripten
+          no_output_timeout: 20m
+          command: |
+            make -C emsdk
+
+      - run:
+          name: link pyodide
+          command: |
+            source emsdk/emsdk/emsdk_env.sh
+            make
+
+      - run:
+          name: list files
+          command: |
+            pwd
+            ls dist
+
+      - persist_to_workspace:
+          root: .
+          paths:
+            - ./dist/
+
+      - store_artifacts:
+          path: /root/repo/dist/
+
+  deploy-release:
+    resource_class: small
+    <<: *defaults
+
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Install requirements
+          command: |
+
+            wget https://github.com/tcnksm/ghr/releases/download/v0.16.2/ghr_v0.16.2_linux_amd64.tar.gz
+            tar xzf ghr_v0.16.2_linux_amd64.tar.gz
+            mv ghr_v0.16.2_linux_amd64/ghr /tmp/ghr-bin
+
+      - run:
+          name: Deploy Github Releases
+          command: |
+            export TAG=`./tools/next_tag.py`
+
+            mkdir -p /tmp/ghr/dist
+            cp -r dist /tmp/ghr/pyodide-asm
+            cd /tmp/ghr
+            tar cjf dist/pyodide-asm.tar.bz2  pyodide-asm/
+
+            /tmp/ghr-bin -t "${GITHUB_TOKEN}" -u "${CIRCLE_PROJECT_USERNAME}" \
+              -r "${CIRCLE_PROJECT_REPONAME}" -c "${CIRCLE_SHA1}" \
+              -delete "${TAG}" \
+              ${MAYBE_PRE_RELEASE} \
+              dist
+
+workflows:
+  build-and-deploy:
+    jobs:
+      - build
+      - deploy-release:
+          requires:
+            - build
+          filters:
+            branches:
+              only: main
