@@ -64,9 +64,9 @@ jobs:
             export TAG=`./tools/next_tag.py`
 
             mkdir -p /tmp/ghr/dist
-            cp -r dist /tmp/ghr/pyodide-asm
+            cp -r dist /tmp/ghr/pyodide
             cd /tmp/ghr
-            tar cjf dist/pyodide-asm.tar.bz2  pyodide-asm/
+            tar cjf dist/pyodide-asm.tar.bz2  pyodide/
 
             /tmp/ghr-bin -t "${GITHUB_TOKEN}" -u "${CIRCLE_PROJECT_USERNAME}" \
               -r "${CIRCLE_PROJECT_REPONAME}" -c "${CIRCLE_SHA1}" \
